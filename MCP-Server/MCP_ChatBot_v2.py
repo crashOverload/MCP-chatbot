@@ -55,7 +55,7 @@ class MCPChatbot:
             tools = response.tools
             print(f"\nConnected to {server_name} with tools:", [t.name for t in tools])
             for tool in tools:
-                print(tool)
+                #print(tool)
                 self.available_tools.append(tool)
                 self.tool_to_session[tool.name] = session
         except Exception as e:
@@ -70,51 +70,63 @@ class MCPChatbot:
             model='gemini-2.5-flash-preview-04-17',
             contents=json.dumps(messages),
             config={'tools':self.available_tools})
+        
         process_query = True
         while process_query:
+            print(f"===========Query res: {response.model_dump_json()}")
+            print(f"===========res text:{response.text}")
+            print(f"===========res content:{response.candidates[0].content}")
             assistant_content = []
+            for candidate in response.candidates:
+                content = candidate.content
+                for part in content.parts:
+                    if part.text :
+                        print(part.text)
+                        assistant_content.append(part.text)
+                        if len(response.candidates) == 1:
+                            process_query = False
+                    
+                    elif part.function_call:
+                        funct = part.function_call
+                        assistant_content.append(json.dumps(funct.to_json_dict()))
+                        messages.append({'role': 'assistant', 'content': assistant_content})
+                        
+                        tool_id = funct.id
+                        tool_args = funct.args
+                        tool_name = funct.name
+                        
+                        print(f"Calling tool {tool_name} with args {tool_args}")
+                        
+                        # Call a tool
+                        #result = execute_tool(tool_name, tool_args): not anymore needed
+                        # tool invocation through the client session
+                        # Call a tool
+                        session = self.tool_to_session[tool_name] # new
+                        result = await session.call_tool(tool_name, arguments=tool_args)
+                        #call_tool_res = self.getResponseForCallTool(result)
+                        #print(f"call tool res: {call_tool_res}")
+                        messages.append({"role": "user", 
+                                            "content": [
+                                                {
+                                                    "type": "tool_result",
+                                                    "tool_name": tool_name,
+                                                    "content": result.model_dump_json()
+                                                }
+                                            ]
+                                        })
+                        response = self.client.models.generate_content(
+                                    model='gemini-2.5-flash-preview-04-17',
+                                    contents=json.dumps(messages),
+                                    config={'tools':self.available_tools})  
+                        
+                        if(len(response.candidates) == 1 and response.candidates[0].content.parts[0].text):
+                            print(response.candidates[0].content.parts[0].text)
+                            process_query= False
 
-            if response.text :
-                assistant_content.append(response.text)
-                print(response.text)
-                #if len(response.text) == 1:
-                process_query = False
-            
-            elif response.function_calls:
-                for content in response.function_calls:
-                    
-                    assistant_content.append(json.dumps(content.to_json_dict()))
-                    messages.append({'role': 'assistant', 'content': assistant_content})
-                    
-                    tool_id = content.id
-                    tool_args = content.args
-                    tool_name = content.name
-                    
-                    print(f"Calling tool {tool_name} with args {tool_args}")
-                    
-                    # Call a tool
-                    #result = execute_tool(tool_name, tool_args): not anymore needed
-                    # tool invocation through the client session
-                     # Call a tool
-                    session = self.tool_to_session[tool_name] # new
-                    result = await session.call_tool(tool_name, arguments=tool_args)
-                    call_tool_res = self.getResponseForCallTool(result)
-                    messages.append({"role": "user", 
-                                        "content": [
-                                            {
-                                                "type": "tool_result",
-                                                "tool_name": tool_name,
-                                                "content": call_tool_res
-                                            }
-                                        ]
-                                    })
-                    response = self.client.models.generate_content(
-                                model='gemini-2.5-flash-preview-04-17',
-                                contents= json.dumps(messages),
-                                config={'tools':self.available_tools})
 
     def getResponseForCallTool(self, callToolResult:types.CallToolResult):
         results = callToolResult.content  # Assuming this is a CallToolResult
+        print(f"call result: {callToolResult.model_dump_json()}")
         return [result.text for result in results]
 
 
