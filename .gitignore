@@ -1,5 +1,5 @@
 myenv
-*papers*
+papers
 *pycache*
 *.env
 *.vscode
